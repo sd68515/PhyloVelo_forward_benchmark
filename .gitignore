@@ -149,3 +149,14 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+# Local benchmark inputs, outputs, and plots
+/data/
+/plots/
+*.h5ad
+
+# Local benchmark workflow; published separately from this method fork
+/phylovelo_benchmark_common.py
+/run_phylovelo_benchmark.py
+/plot_phylovelo_benchmark.py
+/requirements-benchmark.txt
+/tests/

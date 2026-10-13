@@ -1,5 +1,0 @@
-sphinx
-sphinx-rtd-theme
-nbsphinx
-sphinx-autoapi
-recommonmark

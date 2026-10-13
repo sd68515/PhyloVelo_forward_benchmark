@@ -1,10 +1,8 @@
-biopython==1.78
-matplotlib==3.4.1
+biopython>=1.78
+matplotlib>=3.4
 numpy>=1.21
-pandas==1.2.3
-scikit-learn==0.24.1
-scipy==1.6.2
-umap-learn==0.5.1
-scanpy==1.8.2
-nbsphinx
-sphinx-autoapi
+pandas>=1.2
+scikit-learn>=0.24
+scipy>=1.6
+statsmodels>=0.12
+tqdm>=4.60

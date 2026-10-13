@@ -1,174 +1,43 @@
-# PhyloVelo
+# PhyloVelo_forward_benchmark
 
-PhyloVelo estimates transcriptomic velocity from phylogeny-resolved single-cell
-RNA-seq data. It uses monotonically expressed genes (MEGs) as a transcriptomic
-clock, infers gene-wise velocity along cell divisions, and projects the velocity
-field onto low-dimensional embeddings for cell-fate and pseudotime analysis.
+This repository is a research disclosure fork of [PhyloVelo](https://github.com/kunwang34/PhyloVelo) for cross-method RNA velocity benchmarking. It starts from upstream commit `30b93689a4a63f9363d796343cfb70a2bb238530` and retains the original BSD 3-Clause license. The [PhyloVelo paper](https://doi.org/10.1038/s41587-023-01887-5) defines projected trajectories in the backward, ancestral direction. Many downstream velocity comparisons instead evaluate transitions in the forward direction, so this fork makes that projection direction explicit.
 
-The method is designed for datasets where lineage or phylogenetic information is
-available alongside single-cell expression profiles.
+## Changes in this fork
 
-## What PhyloVelo Does
+- `phylovelo.velocity_embedding(..., direction="backward")` keeps the upstream behavior and remains the default.
+- `direction="forward"` projects the inferred gene-wise slope along increasing phylogenetic time. It recalculates neighborhood transition weights and the embedding vector with the forward slope; it does not negate the completed backward embedding.
+- `phylovelo.benchmark.add_embedding_velocity_graph(...)` provides an optional cosine graph from two-dimensional UMAP velocities for embedding-based benchmark metrics. This graph is a derived comparison artifact, not a native gene-expression-space velocity graph.
+- Packaging dependencies were declared in `setup.py`. The repository tree was reduced to the method source, core documentation, license, and dependency files. Benchmark execution and plotting scripts are maintained separately.
 
-- Identifies MEGs associated with cell generation or lineage time.
-- Infers a transcriptomic velocity vector from MEG dynamics.
-- Projects velocity into PCA, t-SNE, UMAP, or another 2D embedding.
-- Estimates PhyloVelo pseudotime from the velocity field or directly from MEG
-  expression.
-- Provides plotting utilities for stream, grid, and point velocity fields.
+The MEG selection, gene-wise slope inference, and original pseudotime implementation are otherwise unchanged. PhyloVelo estimates one slope per gene; this fork does not claim a cell-by-gene velocity layer. Forward embedding results should be described as an adaptation of the published backward projection when reporting benchmark comparisons.
 
-## Installation
+## Installation and use
 
 ```bash
-git clone https://github.com/kunwang34/PhyloVelo.git
-cd PhyloVelo
-pip install .
+python -m pip install -e .
 ```
 
-For reproducible environments, install the versions listed in
-[`requirements.txt`](requirements.txt).
-
-## Documentation
-
-Full tutorials and examples are available in the
-[PhyloVelo documentation](https://phylovelo.readthedocs.io).
-
-Useful starting points:
-
-- [`demo/Simulation_Linear.ipynb`](demo/Simulation_Linear.ipynb)
-- [`demo/C.elegans_demo.ipynb`](demo/C.elegans_demo.ipynb)
-- [`docs/source/notebook/getting_start.ipynb`](docs/source/notebook/getting_start.ipynb)
-
-## Quick Start
+After constructing a `phylovelo.scData` object with expression, embedding coordinates, and a lineage-time proxy as described upstream:
 
 ```python
 import phylovelo as pv
 
-# count: pandas DataFrame, cells x genes expression matrix
-# xdr: pandas DataFrame, cells x 2 embedding coordinates, such as UMAP or t-SNE
-# generation: cell generation or lineage time for each cell
-sd = pv.scData(
-    count=count,
-    Xdr=xdr,
-    cell_names=list(count.index),
-    cell_generation=generation,
-)
-
-# Optional but commonly used before inference.
-sd.normalize_filter(target_sum=None)
-
-# Infer gene-wise velocity from MEGs.
-pv.velocity_inference(
-    sd,
-    time=sd.cell_generation,
-    target="count",
-    cutoff=0.95,
-)
-
-# Project velocity into the embedding.
-pv.velocity_embedding(sd, target="count", n_neigh=100)
-
-# Estimate pseudotime from the embedding velocity graph.
-pv.calc_phylo_pseudotime(sd, n_neighbors=100)
+pv.velocity_inference(sd, time=sd.cell_generation, target="count")
+pv.velocity_embedding(sd, target="count", n_neigh=15, direction="backward")
+backward_embedding = sd.velocity_embeded.copy()
+pv.calc_phylo_pseudotime(sd, n_neighbors=15)
+pv.velocity_embedding(sd, target="count", n_neigh=15, direction="forward")
+forward_embedding = sd.velocity_embeded.copy()
 ```
 
-The main outputs are stored on the `scData` object:
+The original graph pseudotime calculation uses the backward embedding and is therefore run before switching to the forward projection in this example.
 
-- `sd.megs`: selected monotonically expressed genes.
-- `sd.velocity`: inferred gene-wise velocity.
-- `sd.velocity_embeded`: velocity vectors projected into the 2D embedding.
-- `sd.phylo_pseudotime`: pseudotime normalized to `[0, 1]`.
+## Reproducibility and scope
 
-## Pseudotime Options
+[`requirements.lock.txt`](requirements.lock.txt) records the historical local PhyloVelo inference environment and can help reconstruct it. That environment lacked scVelo and the complete plotting stack required by our plotting workflow, so benchmark figures were rendered in a separate environment. The Python version was not captured in the lock file, and its packages have not been reinstalled and validated together for this fork.
 
-PhyloVelo provides two pseudotime estimators.
+The forward projection and graph were checked on four local lineage benchmark datasets (92–95); the local scripts, input datasets, generated h5ad files, figures, and metric scores are outside this source repository. The graph uses UMAP geometry and does not supply the cell-by-gene velocities needed by gene-space metrics. For datasets whose sampling day or generation was used as the inference clock, evaluating against the same label would not provide an independent direction test.
 
-### Velocity-Graph Pseudotime
+## Attribution
 
-This is the original embedding-based strategy. It builds a kNN graph in the
-embedding, orients edges using projected velocity, and estimates pseudotime along
-a minimum-spanning structure.
-
-```python
-pv.calc_phylo_pseudotime(
-    sd,
-    n_neighbors=100,
-    r_sample=0.8,
-    random_state=0,
-)
-```
-
-This implementation is optimized for larger datasets and is robust to disconnected
-or widely separated cell clusters.
-
-### MEG Expression Pseudotime
-
-For a more direct and robust estimate, pseudotime can also be inferred from MEG
-expression. Each MEG is oriented by its inferred velocity direction, clipped by
-per-gene quantiles to reduce outlier influence, aggregated across genes, and
-normalized to `[0, 1]`.
-
-```python
-pv.calc_meg_pseudotime(sd, target="x_normed")
-```
-
-The same estimator can be selected through `calc_phylo_pseudotime`:
-
-```python
-pv.calc_phylo_pseudotime(sd, method="meg", target="x_normed")
-```
-
-The MEG estimator can also transfer a reference clock to an independent dataset
-that only has transcriptome data. The reference `sd` supplies the MEGs, velocity
-directions, and robust scaling; the query matrix only needs matching gene names.
-
-```python
-query_pseudotime = pv.calc_meg_pseudotime(
-    sd,
-    target="x_normed",
-    query_data=query_x_normed,  # cells x genes DataFrame
-)
-```
-
-If the independent data are stored in another `scData` object, pass `query_sd`
-and PhyloVelo will write `query_sd.phylo_pseudotime`.
-
-## Plotting
-
-```python
-import matplotlib.pyplot as plt
-
-fig, ax = plt.subplots(figsize=(6, 6))
-pv.velocity_plot(
-    sd.Xdr.to_numpy(),
-    sd.velocity_embeded,
-    ax,
-    figtype="stream",
-    grid_density=25,
-)
-```
-
-## Example Data
-
-- **Mouse embryo erythroid**:
-  [Google Drive](https://drive.google.com/file/d/1_2SrtJmNILaaKTIoM4VwePOm0_RayrcF/view?usp=drive_link)
-- **KP 3726**:
-  [Google Drive](https://drive.google.com/file/d/1NsgvD3xylUuZm4CEv5gEeYAciTgFUkov/view?usp=drive_link)
-
-Small demo datasets are included under [`demo/datasets`](demo/datasets).
-
-## Citation
-
-If you use PhyloVelo, please cite:
-
-Kun Wang, Liangzhen Hou, Xin Wang, Xiangwei Zhai, Zhaolian Lu, Zhike Zi,
-Weiwei Zhai, Xionglei He, Christina Curtis, Da Zhou, Zheng Hu. PhyloVelo
-enhances transcriptomic velocity field mapping using monotonically expressed
-genes. *Nature Biotechnology* (2023).
-[https://www.nature.com/articles/s41587-023-01887-5](https://www.nature.com/articles/s41587-023-01887-5)
-
-## Development Status
-
-PhyloVelo is under active development. APIs and notebook examples may change
-between versions, and results may vary slightly as inference and visualization
-utilities are improved.
+Original method: Kun Wang *et al.*, “[PhyloVelo enhances transcriptomic velocity field mapping using monotonically expressed genes](https://doi.org/10.1038/s41587-023-01887-5),” *Nature Biotechnology* (2023). Original software: [kunwang34/PhyloVelo](https://github.com/kunwang34/PhyloVelo). See [LICENSE](LICENSE) for the retained BSD 3-Clause terms.

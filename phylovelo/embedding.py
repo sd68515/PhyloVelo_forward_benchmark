@@ -28,11 +28,15 @@ def _as_float_array(x):
 
 class VelocityEmbedding:
 
-    def __init__(self, count, xdr, v):
+    def __init__(self, count, xdr, v, direction="backward"):
+        if direction not in ("backward", "forward"):
+            raise ValueError("direction must be 'backward' or 'forward'")
         self.count = _as_float_array(count)
         self.xdr = _as_float_array(xdr)
         self.kNN = None
-        self.v = -_as_float_array(v)[None, :]
+        # Gene slopes follow increasing phylogenetic time. The original
+        # projection negates them to estimate ancestral states.
+        self.v = (-1 if direction == "backward" else 1) * _as_float_array(v)[None, :]
         self.d = self.rho(self.v)
         d = self.d.ravel()
         self._d_mean = d.mean()
@@ -201,7 +205,7 @@ class VelocityEmbedding:
         return dx
 
 
-def velocity_embedding(sd:'scData', target:str="count", n_neigh:int=None, chunk_size:int=None):
+def velocity_embedding(sd:'scData', target:str="count", n_neigh:int=None, chunk_size:int=None, direction:str="backward"):
     '''
     Project velocity into embedding
     
@@ -214,9 +218,12 @@ def velocity_embedding(sd:'scData', target:str="count", n_neigh:int=None, chunk_
             kNN pooling. Default: Ncells//3
         chunk_size:
             Number of cells per vectorized block. Default estimates a memory-safe size.
+        direction:
+            'backward' reproduces the original ancestral-state projection;
+            'forward' projects increasing phylogenetic time for benchmarks.
     '''
     data = getattr(sd, target)
-    ve = VelocityEmbedding(data.to_numpy(), sd.Xdr.to_numpy(), sd.velocity)
+    ve = VelocityEmbedding(data.to_numpy(), sd.Xdr.to_numpy(), sd.velocity, direction=direction)
     if n_neigh is None:
         n_neigh = data.shape[0] // 3
     ve.get_neighbors(n_neigh)
